@@ -1,14 +1,22 @@
-import { BadRequestException, Body, Controller, Get, HttpCode, Logger, Post, Req } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  Logger,
+  Post,
+  Req,
+} from '@nestjs/common';
 import { Request } from 'express';
 
 import { WhatsappService } from './whatsapp.service';
 
 @Controller('whatsapp')
 export class WhatsappController {
-  constructor(
-    private readonly whatsappService: WhatsappService,
-  ) {}
+  private readonly logger = new Logger(WhatsappController.name);
 
+  constructor(private readonly whatsappService: WhatsappService) {}
 
   @Get('webhook')
   whatsappVerificationChallenge(@Req() request: Request) {
@@ -40,13 +48,44 @@ export class WhatsappController {
     const messageSender = message.from;
     const messageID = message.id;
 
-    switch (message.type) {
-      case 'text':
-        const text = message.text.body;
-        await this.whatsappService.sendWhatsappMessage(messageSender);
-        break;
-      default:
-        return;
+    try {
+      switch (message.type) {
+        case 'text':
+          const text = message.text.body;
+
+          // Try to find the aseobi type from the user's message
+          const aseobiType = this.whatsappService.findAseobiType(text);
+
+          if (aseobiType) {
+            // If an aseobi type was found, send its products
+            await this.whatsappService.sendAseobiProducts(
+              messageSender,
+              aseobiType,
+            );
+          } else {
+            // If no aseobi type was found, send the welcome message
+            await this.whatsappService.sendTextMessage(
+              messageSender,
+              this.whatsappService.getWelcomeMessage(),
+            );
+          }
+          break;
+
+        case 'image':
+          // For images, send the welcome message
+          await this.whatsappService.sendTextMessage(
+            messageSender,
+            this.whatsappService.getWelcomeMessage(),
+          );
+          break;
+
+        default:
+          this.logger.log(`Unhandled message type: ${message.type}`);
+          return;
+      }
+    } catch (error) {
+      this.logger.error('Error processing message:', error);
+      throw new BadRequestException('Error processing message');
     }
   }
 }
