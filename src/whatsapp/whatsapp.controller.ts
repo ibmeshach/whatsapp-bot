@@ -46,36 +46,17 @@ export class WhatsappController {
 
     const message = messages[0];
     const messageSender = message.from;
-    const messageID = message.id;
 
     try {
       switch (message.type) {
         case 'text':
-          const text = message.text.body;
-
-          // Try to find the aseobi type from the user's message
-          const aseobiType = this.whatsappService.findAseobiType(text);
-
-          if (aseobiType) {
-            // If an aseobi type was found, send its products
-            await this.whatsappService.sendAseobiProducts(
-              messageSender,
-              aseobiType,
-            );
-          } else {
-            // If no aseobi type was found, send the welcome message
-            await this.whatsappService.sendTextMessage(
-              messageSender,
-              this.whatsappService.getWelcomeMessage(),
-            );
-          }
+          await this.handleTextMessage(messageSender, message.text.body);
           break;
 
-        case 'image':
-          // For images, send the welcome message
-          await this.whatsappService.sendTextMessage(
+        case 'interactive':
+          await this.handleInteractiveMessage(
             messageSender,
-            this.whatsappService.getWelcomeMessage(),
+            message.interactive,
           );
           break;
 
@@ -86,6 +67,63 @@ export class WhatsappController {
     } catch (error) {
       this.logger.error('Error processing message:', error);
       throw new BadRequestException('Error processing message');
+    }
+  }
+
+  private async handleTextMessage(messageSender: string, text: string) {
+    // Check if user typed "shop"
+    if (text.toLowerCase().includes('shop')) {
+      await this.whatsappService.sendCatalogOptions(messageSender);
+    } else {
+      // For any other message, send welcome message
+      await this.whatsappService.sendWelcomeMessage(messageSender);
+    }
+  }
+
+  private async handleInteractiveMessage(
+    messageSender: string,
+    interactive: any,
+  ) {
+    let responseId: string;
+
+    // Handle button replies
+    if (interactive.type === 'button_reply') {
+      responseId = interactive.button_reply.id;
+    }
+    // Handle list replies
+    else if (interactive.type === 'list_reply') {
+      responseId = interactive.list_reply.id;
+    } else {
+      this.logger.log(`Unhandled interactive type: ${interactive.type}`);
+      return;
+    }
+
+    // Handle category selections from the list (format: category_traditional, category_casual, etc.)
+    if (responseId.startsWith('category_')) {
+      const categoryId = responseId.replace('category_', '');
+      await this.whatsappService.sendCategoryCatalogCard(
+        messageSender,
+        categoryId,
+      );
+    }
+    // Handle "View items" button clicks (format: view_traditional, view_casual, etc.)
+    else if (responseId.startsWith('view_')) {
+      const categoryId = responseId.replace('view_', '');
+      await this.whatsappService.sendCategoryProducts(
+        messageSender,
+        categoryId,
+      );
+    }
+    // Handle back to categories button
+    else if (responseId === 'back_to_categories') {
+      await this.whatsappService.sendCatalogOptions(messageSender);
+    }
+    // Handle continue shopping button
+    else if (responseId === 'continue_shopping') {
+      await this.whatsappService.sendCatalogOptions(messageSender);
+    } else {
+      // For any unhandled response, send welcome message
+      await this.whatsappService.sendWelcomeMessage(messageSender);
     }
   }
 }
